@@ -77,7 +77,7 @@ function _handleJoin(rooms, ws, msg) {
   const playerName = msg.name || msg.playerName || 'Anonymous';
   const playerId = msg.playerId || ws._connectionId + '';
 
-  const result = joinRoom(rooms, ws, roomName, playerName, playerId);
+  const result = joinRoom(rooms, ws, roomName, playerName, playerId, msg.preferredSeat);
   if (!result.success) {
     _send(ws, { type: 'join_rejected', reason: result.reason });
     return;
@@ -411,7 +411,11 @@ function _handleBidIntent(room, ws, seat, move) {
   const session = room.session;
   if (!session) return _sendRejection(ws, 'bid', 'No active game');
 
-  const result = session.processBid(move.seat, move.bid, move.marks || 1);
+  if (move.seat !== undefined && move.seat !== seat) {
+    return _sendRejection(ws, 'bid', 'Seat mismatch');
+  }
+
+  const result = session.processBid(seat, move.bid, move.marks || 1);
   if (!result.valid) {
     return _sendRejection(ws, 'bid', result.reason);
   }
@@ -419,15 +423,15 @@ function _handleBidIntent(room, ws, seat, move) {
   // Build confirmed message
   const confirmed = {
     action: 'bid_confirmed',
-    seat: move.seat,
+    seat: seat,
     bid: move.bid,
     marks: move.marks || 1,
     displayBid: (move.marks > 1) ? (move.marks + 'x') : move.bid,
     biddingDone: result.biddingDone || false,
-    nextBidder: result.nextBidder || null,
+    nextBidder: result.nextBidder !== undefined ? result.nextBidder : null,
     bidWinner: result.bidWinner !== undefined ? result.bidWinner : null,
-    winningBid: result.winningBid || null,
-    winningMarks: result.winningMarks || null,
+    winningBid: result.winningBid !== undefined ? result.winningBid : null,
+    winningMarks: result.winningMarks !== undefined ? result.winningMarks : null,
     redeal: result.redeal || false,
   };
 
@@ -451,19 +455,23 @@ function _handlePassIntent(room, ws, seat, move) {
   const session = room.session;
   if (!session) return _sendRejection(ws, 'pass', 'No active game');
 
-  const result = session.processPass(move.seat);
+  if (move.seat !== undefined && move.seat !== seat) {
+    return _sendRejection(ws, 'pass', 'Seat mismatch');
+  }
+
+  const result = session.processPass(seat);
   if (!result.valid) {
     return _sendRejection(ws, 'pass', result.reason);
   }
 
   const confirmed = {
     action: 'pass_confirmed',
-    seat: move.seat,
+    seat: seat,
     biddingDone: result.biddingDone || false,
-    nextBidder: result.nextBidder || null,
+    nextBidder: result.nextBidder !== undefined ? result.nextBidder : null,
     bidWinner: result.bidWinner !== undefined ? result.bidWinner : null,
-    winningBid: result.winningBid || null,
-    winningMarks: result.winningMarks || null,
+    winningBid: result.winningBid !== undefined ? result.winningBid : null,
+    winningMarks: result.winningMarks !== undefined ? result.winningMarks : null,
     redeal: result.redeal || false,
   };
 

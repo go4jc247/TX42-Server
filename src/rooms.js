@@ -55,7 +55,7 @@ function createRooms() {
  * @param {string} playerId - unique player identifier
  * @returns {{ success, seat?, room?, reason? }}
  */
-function joinRoom(rooms, ws, roomName, playerName, playerId) {
+function joinRoom(rooms, ws, roomName, playerName, playerId, preferredSeat) {
   const room = rooms.get(roomName);
   if (!room) {
     return { success: false, reason: 'Room not found: ' + roomName };
@@ -82,7 +82,13 @@ function joinRoom(rooms, ws, roomName, playerName, playerId) {
   // Find next available seat
   const maxSeats = room.maxPlayers;
   let assignedSeat = -1;
-  for (let s = 0; s < maxSeats; s++) {
+
+  // Try preferred seat first
+  if (preferredSeat !== undefined && preferredSeat !== null && preferredSeat >= 0 && preferredSeat < maxSeats && !room.players.has(preferredSeat)) {
+    assignedSeat = preferredSeat;
+  }
+
+  if (assignedSeat < 0) for (let s = 0; s < maxSeats; s++) {
     if (!room.players.has(s)) {
       assignedSeat = s;
       break;
