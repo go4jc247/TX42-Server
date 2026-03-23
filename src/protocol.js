@@ -13,6 +13,7 @@ const {
 const { handleChat, handleChatClear } = require('./chat');
 const { recordActivity } = require('./connection');
 const { tileEquals } = require('./tiles');
+const { aiBid, aiChooseTrump, aiChoosePlay } = require('./ai');
 
 /**
  * Handle an incoming WebSocket message.
@@ -177,6 +178,150 @@ function _handleHello(room, ws, move) {
   _broadcastPlayerList(room);
 }
 
+/** Check if a seat is AI (no connected human player). */
+function _isAI(room, seat) {
+  const player = room.players.get(seat);
+  return !player || !player.connected;
+}
+
+/** Process AI turns — keeps running while the current player is AI. */
+function _processAITurns(room) {
+  const session = room.session;
+  if (!session) return;
+
+  // Small delay to make AI feel natural
+  setTimeout(() => _doAITurn(room), 500);
+}
+
+function _doAITurn(room) {
+  const session = room.session;
+  if (!session) return;
+  const phase = session.phase;
+
+  if (phase === 'NEED_BID') {
+    const bidder = session.currentBidder;
+    if (!_isAI(room, bidder)) return; // Human's turn
+
+    const hand = session.game.hands[bidder];
+    const decision = aiBid(hand, session.highBid || 0, 'T42');
+
+    if (decision.action === 'bid') {
+      const result = session.processBid(bidder, decision.bid, 1);
+      if (result.valid) {
+        broadcastToRoom(room, { type: 'move', move: {
+          action: 'bid_confirmed', seat: bidder, bid: decision.bid,
+          nextBidder: session.currentBidder, biddingDone: result.biddingDone,
+          bidWinner: result.bidWinner, highBid: session.highBid,
+        }});
+        if (result.biddingDone && result.bidWinner >= 0) {
+          // If bid winner is AI, auto-pick trump
+          setTimeout(() => _doAITurn(room), 500);
+        } else if (!result.biddingDone) {
+          setTimeout(() => _doAITurn(room), 500);
+        }
+        return;
+      }
+    }
+    // Pass
+    const result = session.processPass(bidder);
+    if (result.valid) {
+      broadcastToRoom(room, { type: 'move', move: {
+        action: 'pass_confirmed', seat: bidder,
+        nextBidder: session.currentBidder, biddingDone: result.biddingDone,
+        allPassed: result.allPassed, bidWinner: result.bidWinner, highBid: session.highBid,
+      }});
+      if (result.allPassed) {
+        // Redeal
+        _startGame(room, session.marksToWin);
+      } else if (result.biddingDone && result.bidWinner >= 0) {
+        setTimeout(() => _doAITurn(room), 500);
+      } else {
+        setTimeout(() => _doAITurn(room), 500);
+      }
+    }
+    return;
+  }
+
+  if (phase === 'NEED_TRUMP') {
+    const winner = session.bidWinnerSeat;
+    if (!_isAI(room, winner)) return; // Human picks trump
+
+    const hand = session.game.hands[winner];
+    const decision = aiChooseTrump(hand);
+    const trump = decision.trump;
+    const isNello = false;
+    const mode = (trump === 'DOUBLES') ? 'DOUBLES' : 'PIP';
+
+    const result = session.processTrump(winner, trump === 'DOUBLES' ? -1 : trump, isNello);
+    if (result.valid) {
+      broadcastToRoom(room, { type: 'move', move: {
+        action: 'trump_confirmed', seat: winner,
+        trump: trump, trumpMode: mode,
+        firstPlayer: session.game.currentPlayer,
+      }});
+      setTimeout(() => _doAITurn(room), 500);
+    }
+    return;
+  }
+
+  if (phase === 'PLAYING') {
+    const currentPlayer = session.game.currentPlayer;
+    if (!_isAI(room, currentPlayer)) return; // Human's turn
+
+    const playIdx = aiChoosePlay(session.game, currentPlayer);
+    if (playIdx === null) return;
+
+    const tile = session.game.hands[currentPlayer][playIdx];
+    const result = session.processPlay(currentPlayer, tile);
+    if (result.valid) {
+      const move = {
+        action: 'play_confirmed',
+        seat: currentPlayer,
+        tile: [tile[0], tile[1]],
+        isLead: result.isLead,
+        trickNumber: result.trickNumber,
+        nextPlayer: session.game.currentPlayer,
+        currentPlayer: session.game.currentPlayer,
+        trickComplete: result.trickComplete,
+        trickWinner: result.trickWinner,
+        handComplete: result.handComplete,
+        teamPoints: session.game.teamPoints,
+      };
+      if (result.handComplete && result.handResult) {
+        move.handResult = result.handResult;
+        move.teamMarks = session.teamMarks;
+      }
+      broadcastToRoom(room, { type: 'move', move });
+
+      if (result.handComplete) {
+        if (session.phase === 'GAME_OVER') {
+          broadcastToRoom(room, { type: 'move', move: { action: 'game_over', teamMarks: session.teamMarks } });
+        } else {
+          // Deal next hand after a pause
+          setTimeout(() => {
+            session.dealNewHand();
+            for (const [s, p] of room.players) {
+              if (p.connected && p.ws) {
+                sendToSeat(room, s, { type: 'move', move: {
+                  action: 'deal', seat: s,
+                  hand: session.game.hands[s].map(t => [t[0], t[1]]),
+                  dealer: session.dealer, handNumber: session.handNumber,
+                  firstBidder: session.currentBidder,
+                  teamMarks: session.teamMarks,
+                }});
+              }
+            }
+            setTimeout(() => _doAITurn(room), 500);
+          }, 2000);
+        }
+      } else {
+        setTimeout(() => _doAITurn(room), 500);
+      }
+    }
+    return;
+  }
+}
+
 function _handleStartGame(room, ws, move) {
   _startGame(room, move && move.marksToWin);
 }
@@ -217,6 +362,9 @@ function _startGame(room, marksToWin) {
   }
 
   console.log(`[PROTO] Game started in ${room.name}: dealer=seat ${room.session.dealer}, first bidder=seat ${room.session.currentBidder}`);
+
+  // If first bidder is AI, start AI turns
+  _processAITurns(room);
 }
 
 function _handleBidIntent(room, ws, seat, move) {
@@ -251,8 +399,11 @@ function _handleBidIntent(room, ws, seat, move) {
       if (room.session) {
         room.session.dealNewHand();
         _sendDealToAll(room);
+        _processAITurns(room);
       }
     }, 1500);
+  } else {
+    _processAITurns(room);
   }
 }
 
@@ -283,8 +434,11 @@ function _handlePassIntent(room, ws, seat, move) {
       if (room.session) {
         room.session.dealNewHand();
         _sendDealToAll(room);
+        _processAITurns(room);
       }
     }, 1500);
+  } else {
+    _processAITurns(room);
   }
 }
 
@@ -316,6 +470,7 @@ function _handleTrumpIntent(room, ws, seat, move) {
   };
 
   broadcastToRoom(room, { type: 'move', move: confirmed });
+  _processAITurns(room);
 }
 
 function _handlePlayIntent(room, ws, seat, move) {
@@ -393,8 +548,22 @@ function _handlePlayIntent(room, ws, seat, move) {
 
   broadcastToRoom(room, { type: 'move', move: confirmed });
 
-  // If hand is complete and game is over, no further action needed
-  // If hand is complete but game continues, clients handle the pause
+  if (result.handComplete) {
+    if (session.phase === 'GAME_OVER') {
+      broadcastToRoom(room, { type: 'move', move: { action: 'game_over', teamMarks: session.teamMarks } });
+    } else {
+      // Deal next hand after a pause
+      setTimeout(() => {
+        if (room.session) {
+          room.session.dealNewHand();
+          _sendDealToAll(room);
+          _processAITurns(room);
+        }
+      }, 2000);
+    }
+  } else {
+    _processAITurns(room);
+  }
 }
 
 function _handleRefreshRequest(room, ws, seat) {
