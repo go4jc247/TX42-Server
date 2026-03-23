@@ -194,9 +194,11 @@ function _processAITurns(room) {
 }
 
 function _doAITurn(room) {
+  try {
   const session = room.session;
   if (!session) return;
   const phase = session.phase;
+  console.log(`[AI] Processing turn: phase=${phase}, currentBidder=${session.currentBidder}, currentPlayer=${session.game ? session.game.currentPlayer : '?'}`);
 
   if (phase === 'NEED_BID') {
     const bidder = session.currentBidder;
@@ -319,6 +321,9 @@ function _doAITurn(room) {
       }
     }
     return;
+  }
+  } catch(err) {
+    console.error('[AI] Error in _doAITurn:', err.message, err.stack);
   }
 }
 
