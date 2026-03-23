@@ -366,11 +366,8 @@ function _doAITurn(room) {
 }
 
 function _handleStartGame(room, ws, move) {
-  // Guard against multiple start_game calls during an active session
-  if (room.session && room.session.phase !== 'LOBBY' && room.session.phase !== 'GAME_OVER') {
-    _send(ws, { type: 'error', reason: 'Game already in progress' });
-    return;
-  }
+  // Reset any existing session — new game always starts fresh
+  room.session = null;
   _startGame(room, move && move.marksToWin);
 }
 
