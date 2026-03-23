@@ -272,6 +272,7 @@ function _doAITurn(room) {
 
   if (phase === 'NEED_TRUMP') {
     const winner = session.bidWinnerSeat;
+    _dlog(`[AI] NEED_TRUMP: winner=${winner}, isAI=${_isAI(room, winner)}, players=${Array.from(room.players.keys())}`);
     if (!_isAI(room, winner)) return; // Human picks trump
 
     const hand = session.game.hands[winner];
@@ -282,6 +283,7 @@ function _doAITurn(room) {
 
     const trumpValue = (trump === 'DOUBLES') ? 'DOUBLES' : trump;
     const result = session.processTrump(winner, trumpValue, isNello);
+    _dlog(`[AI] Trump result: valid=${result.valid}, reason=${result.reason || 'ok'}, trump=${trumpValue}`);
     if (result.valid) {
       broadcastToRoom(room, { type: 'move', move: {
         action: 'trump_confirmed',
