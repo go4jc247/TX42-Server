@@ -90,7 +90,18 @@ function joinRoom(rooms, ws, roomName, playerName, playerId) {
   }
 
   if (assignedSeat < 0) {
-    return { success: false, reason: 'Room is full' };
+    // Check for disconnected players whose grace period may be over — boot them
+    for (const [s, p] of room.players) {
+      if (!p.connected) {
+        if (p.disconnectTimer) clearTimeout(p.disconnectTimer);
+        room.players.delete(s);
+        assignedSeat = s;
+        break;
+      }
+    }
+    if (assignedSeat < 0) {
+      return { success: false, reason: 'Room is full' };
+    }
   }
 
   // Assign seat
@@ -204,12 +215,12 @@ function roomStatus(rooms) {
       });
     }
     status.push({
-      name,
+      room: name,
       mode: room.mode,
-      maxPlayers: room.maxPlayers,
-      playerCount: room.players.size,
+      max: room.maxPlayers,
+      count: room.players.size,
       players: connectedPlayers,
-      observerCount: room.observers.size,
+      observers: room.observers.size,
       hasSession: !!room.session,
       phase: room.session ? room.session.phase : null,
     });

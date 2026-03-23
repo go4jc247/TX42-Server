@@ -76,6 +76,9 @@ function _handleJoin(rooms, ws, msg) {
 
   const room = result.room;
 
+  // Send joined confirmation first
+  _send(ws, { type: 'joined', room: roomName, max: room.maxPlayers });
+
   // Send seat assignment to the joining player
   _send(ws, {
     type: 'move',
@@ -84,7 +87,7 @@ function _handleJoin(rooms, ws, msg) {
       seat: result.seat,
       room: roomName,
       playerId,
-      reconnected: result.reconnected || false,
+      reconnect: result.reconnected || false,
     },
   });
 
@@ -210,12 +213,16 @@ function _doAITurn(room) {
     if (decision.action === 'bid') {
       const result = session.processBid(bidder, decision.bid, 1);
       if (result.valid) {
+        const winningBid = result.biddingDone ? session.highBid : (session.highBid || 0);
+        const winningMarks = result.biddingDone ? (session.highMarks || 1) : (session.highMarks || 1);
         broadcastToRoom(room, { type: 'move', move: {
           action: 'bid_confirmed', seat: bidder, bid: decision.bid,
+          marks: 1, displayBid: decision.bid,
           nextBidder: session.currentBidder, biddingDone: result.biddingDone,
           bidWinner: result.bidWinner, highBid: session.highBid,
+          winningBid, winningMarks, redeal: false,
         }});
-        if (result.biddingDone && result.bidWinner >= 0) {
+        if (result.biddingDone && result.bidWinner !== null && result.bidWinner !== undefined && result.bidWinner >= 0) {
           // If bid winner is AI, auto-pick trump
           setTimeout(() => _doAITurn(room), 500);
         } else if (!result.biddingDone) {
@@ -227,15 +234,22 @@ function _doAITurn(room) {
     // Pass
     const result = session.processPass(bidder);
     if (result.valid) {
+      const winningBid = session.highBid || 0;
+      const winningMarks = session.highMarks || 1;
       broadcastToRoom(room, { type: 'move', move: {
         action: 'pass_confirmed', seat: bidder,
         nextBidder: session.currentBidder, biddingDone: result.biddingDone,
-        allPassed: result.allPassed, bidWinner: result.bidWinner, highBid: session.highBid,
+        bidWinner: result.bidWinner, highBid: session.highBid,
+        winningBid, winningMarks, redeal: result.redeal || false,
       }});
-      if (result.allPassed) {
+      if (result.redeal) {
         // Redeal
-        _startGame(room, session.marksToWin);
-      } else if (result.biddingDone && result.bidWinner >= 0) {
+        setTimeout(() => {
+          session.dealNewHand();
+          _sendDealToAll(room);
+          _processAITurns(room);
+        }, 1500);
+      } else if (result.bidWinner !== null && result.bidWinner !== undefined && result.bidWinner >= 0) {
         setTimeout(() => _doAITurn(room), 500);
       } else {
         setTimeout(() => _doAITurn(room), 500);
@@ -254,7 +268,8 @@ function _doAITurn(room) {
     const isNello = false;
     const mode = (trump === 'DOUBLES') ? 'DOUBLES' : 'PIP';
 
-    const result = session.processTrump(winner, trump === 'DOUBLES' ? -1 : trump, isNello);
+    const trumpValue = (trump === 'DOUBLES') ? 'DOUBLES' : trump;
+    const result = session.processTrump(winner, trumpValue, isNello);
     if (result.valid) {
       broadcastToRoom(room, { type: 'move', move: {
         action: 'trump_confirmed', seat: winner,
@@ -274,13 +289,14 @@ function _doAITurn(room) {
     if (playIdx === null) return;
 
     const tile = session.game.hands[currentPlayer][playIdx];
+    const isLead = session.game.currentTrick.length === 0;
     const result = session.processPlay(currentPlayer, tile);
     if (result.valid) {
       const move = {
         action: 'play_confirmed',
         seat: currentPlayer,
         tile: [tile[0], tile[1]],
-        isLead: result.isLead,
+        isLead: isLead,
         trickNumber: result.trickNumber,
         nextPlayer: session.game.currentPlayer,
         currentPlayer: session.game.currentPlayer,
@@ -328,6 +344,11 @@ function _doAITurn(room) {
 }
 
 function _handleStartGame(room, ws, move) {
+  // Guard against multiple start_game calls during an active session
+  if (room.session && room.session.phase !== 'LOBBY' && room.session.phase !== 'GAME_OVER') {
+    _send(ws, { type: 'error', reason: 'Game already in progress' });
+    return;
+  }
   _startGame(room, move && move.marksToWin);
 }
 
@@ -361,6 +382,7 @@ function _startGame(room, marksToWin) {
           dealer: room.session.dealer,
           handNumber: room.session.handNumber,
           firstBidder: room.session.currentBidder,
+          teamMarks: room.session.teamMarks.slice(),
         },
       });
     }
@@ -604,6 +626,7 @@ function _sendDealToAll(room) {
           dealer: session.dealer,
           handNumber: session.handNumber,
           firstBidder: session.currentBidder,
+          teamMarks: session.teamMarks.slice(),
         },
       });
     }
@@ -625,14 +648,9 @@ function _sendDealToAll(room) {
 
 /** Broadcast player list to all in a room. */
 function _broadcastPlayerList(room) {
-  const playerList = [];
+  const playerList = {};
   for (const [seat, player] of room.players) {
-    playerList.push({
-      seat,
-      name: player.name,
-      connected: player.connected,
-      playerId: player.playerId,
-    });
+    playerList[seat] = { seat, name: player.name, connected: player.connected, playerId: player.playerId };
   }
 
   broadcastToRoom(room, {
