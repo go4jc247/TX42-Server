@@ -15,6 +15,15 @@ const { recordActivity } = require('./connection');
 const { tileEquals } = require('./tiles');
 const { aiBid, aiChooseTrump, aiChoosePlay } = require('./ai');
 
+// Debug log buffer
+if (!global._debugLogs) global._debugLogs = [];
+function _dlog(msg) {
+  const entry = `[${new Date().toISOString()}] ${msg}`;
+  console.log(entry);
+  global._debugLogs.push(entry);
+  if (global._debugLogs.length > 100) global._debugLogs.shift();
+}
+
 /**
  * Handle an incoming WebSocket message.
  * @param {Map} rooms - all rooms
@@ -191,10 +200,10 @@ function _isAI(room, seat) {
 function _processAITurns(room) {
   const session = room.session;
   if (!session) return;
-  console.log(`[AI] _processAITurns called, phase=${session.phase}`);
+  _dlog(`[AI] _processAITurns called, phase=${session.phase}`);
   // Small delay to make AI feel natural
   setTimeout(() => {
-    console.log(`[AI] timeout fired, calling _doAITurn`);
+    _dlog(`[AI] timeout fired, calling _doAITurn`);
     _doAITurn(room);
   }, 500);
 }
@@ -204,7 +213,7 @@ function _doAITurn(room) {
   const session = room.session;
   if (!session) return;
   const phase = session.phase;
-  console.log(`[AI] Processing turn: phase=${phase}, currentBidder=${session.currentBidder}, currentPlayer=${session.game ? session.game.currentPlayer : '?'}`);
+  _dlog(`[AI] Processing turn: phase=${phase}, currentBidder=${session.currentBidder}, currentPlayer=${session.game ? session.game.currentPlayer : '?'}`);
 
   if (phase === 'NEED_BID') {
     const bidder = session.currentBidder;
@@ -342,8 +351,8 @@ function _doAITurn(room) {
     return;
   }
   } catch(err) {
-    console.error('[AI] CRASH in _doAITurn:', err.message);
-    console.error('[AI] Stack:', err.stack);
+    _dlog('[AI] CRASH in _doAITurn:', err.message);
+    _dlog('[AI] Stack:', err.stack);
   }
 }
 
