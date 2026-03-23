@@ -284,9 +284,16 @@ function _doAITurn(room) {
     const result = session.processTrump(winner, trumpValue, isNello);
     if (result.valid) {
       broadcastToRoom(room, { type: 'move', move: {
-        action: 'trump_confirmed', seat: winner,
-        trump: trump, trumpMode: mode,
+        action: 'trump_confirmed',
+        seat: winner,
+        trump: trump,
+        trumpMode: mode,
         firstPlayer: session.game.currentPlayer,
+        marks: session.bidMarks || 1,
+        nello: isNello,
+        contract: session.contract,
+        activePlayers: session.game.activePlayers.slice(),
+        trumpSuit: session.game.trumpSuit,
       }});
       setTimeout(() => _doAITurn(room), 500);
     }
@@ -498,7 +505,7 @@ function _handleTrumpIntent(room, ws, seat, move) {
   if (trumpValue === 'NT') trumpValue = null;
 
   const nello = move.nello || false;
-  const result = session.processTrump(move.seat, nello ? 'NELLO' : trumpValue, nello);
+  const result = session.processTrump(seat, nello ? 'NELLO' : trumpValue, nello);
 
   if (!result.valid) {
     return _sendRejection(ws, 'trump', result.reason);
@@ -511,7 +518,7 @@ function _handleTrumpIntent(room, ws, seat, move) {
     marks: session.bidMarks,
     nello: nello,
     contract: session.contract,
-    currentPlayer: session.game.currentPlayer,
+    firstPlayer: session.game.currentPlayer,
     activePlayers: session.game.activePlayers.slice(),
     trumpSuit: session.game.trumpSuit,
     trumpMode: session.game.trumpMode,

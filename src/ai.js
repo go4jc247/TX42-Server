@@ -51,7 +51,7 @@ function aiChooseTrump(hand) {
   const suitCounts = {};
   let doubles = 0;
   for (const t of hand) {
-    if (t[0] === t[1]) { doubles++; continue; }
+    if (t[0] === t[1]) doubles++;
     for (const pip of [t[0], t[1]]) {
       suitCounts[pip] = (suitCounts[pip] || 0) + 1;
     }
@@ -103,8 +103,8 @@ function aiChoosePlay(game, seat) {
     if (score > highestScore) { highestScore = score; highestIdx = idx; }
   }
 
-  // Try to play high to win, otherwise dump low
-  return highestIdx;
+  // Following: play lowest tile (can't easily determine if we'd win)
+  return lowestIdx;
 }
 
 module.exports = { aiBid, aiChooseTrump, aiChoosePlay };

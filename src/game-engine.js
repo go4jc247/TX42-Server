@@ -56,6 +56,7 @@ class GameEngine {
     // Nello / special flags
     this.nelloDoublesSuit = false;
     this.forceDoubleTrump = false;
+    this.dfmActive = false; // Doubles Follow Me
   }
 
   // ----------------------------------------------------------
@@ -103,6 +104,13 @@ class GameEngine {
   /**
    * Set which players are active (for Nello where partner sits out).
    */
+  /**
+   * Enable/disable Doubles Follow Me rule.
+   */
+  setDfm(active) {
+    this.dfmActive = !!active;
+  }
+
   setActivePlayers(players) {
     const valid = (players || [])
       .map(p => Number(p))
@@ -228,6 +236,26 @@ class GameEngine {
       if (this.forceDoubleTrump) {
         const forcedIdx = trumpIdx.filter(i => this._isDouble(hand[i]));
         if (forcedIdx.length) return forcedIdx;
+      }
+      // Doubles Follow Me: when doubles are trump and a double was led
+      if (this.trumpMode === 'DOUBLES' && this.dfmActive) {
+        const trick = this._sanitizedTrick();
+        if (trick.length > 0) {
+          const ledTile = trick[0][1];
+          if (this._isDouble(ledTile)) {
+            // Tier 1: must play any double if you have one
+            const dblIdx = [];
+            for (let i = 0; i < hand.length; i++) if (this._isDouble(hand[i])) dblIdx.push(i);
+            if (dblIdx.length) return dblIdx;
+            // Tier 2: must play tile containing the led double's pip
+            const ledPip = ledTile[0];
+            const pipIdx = [];
+            for (let i = 0; i < hand.length; i++) if (tileContainsPip(hand[i], ledPip)) pipIdx.push(i);
+            if (pipIdx.length) return pipIdx;
+            // Tier 3: play anything
+            return Array.from({ length: hand.length }, (_, i) => i);
+          }
+        }
       }
       return trumpIdx.length ? trumpIdx : Array.from({ length: hand.length }, (_, i) => i);
     }
