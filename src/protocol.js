@@ -191,9 +191,12 @@ function _isAI(room, seat) {
 function _processAITurns(room) {
   const session = room.session;
   if (!session) return;
-
+  console.log(`[AI] _processAITurns called, phase=${session.phase}`);
   // Small delay to make AI feel natural
-  setTimeout(() => _doAITurn(room), 500);
+  setTimeout(() => {
+    console.log(`[AI] timeout fired, calling _doAITurn`);
+    _doAITurn(room);
+  }, 500);
 }
 
 function _doAITurn(room) {
@@ -339,7 +342,8 @@ function _doAITurn(room) {
     return;
   }
   } catch(err) {
-    console.error('[AI] Error in _doAITurn:', err.message, err.stack);
+    console.error('[AI] CRASH in _doAITurn:', err.message);
+    console.error('[AI] Stack:', err.stack);
   }
 }
 
