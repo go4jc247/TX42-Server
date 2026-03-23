@@ -178,12 +178,26 @@ function _handleHello(room, ws, move) {
 }
 
 function _handleStartGame(room, ws, move) {
+  _startGame(room, move && move.marksToWin);
+}
+
+function _startGame(room, marksToWin) {
   // Create a new session if one doesn't exist
   if (!room.session) {
-    room.session = new Session(move.marksToWin || 7);
+    room.session = new Session(marksToWin || 7);
   }
 
   room.session.startGame();
+
+  // Broadcast start_game to all players
+  broadcastToRoom(room, {
+    type: 'move',
+    move: {
+      action: 'start_game',
+      gameMode: 'T42',
+      marksToWin: room.session.marksToWin || 7,
+    },
+  });
 
   // Send dealt hands to each player individually
   for (const [seat, player] of room.players) {
@@ -202,18 +216,7 @@ function _handleStartGame(room, ws, move) {
     }
   }
 
-  // Broadcast game started to observers
-  for (const obsWs of room.observers) {
-    try {
-      obsWs.send(JSON.stringify({
-        type: 'move',
-        move: {
-          action: 'game_started',
-          snapshot: room.session.fullSnapshot(),
-        },
-      }));
-    } catch (_) { /* ignore */ }
-  }
+  console.log(`[PROTO] Game started in ${room.name}: dealer=seat ${room.session.dealer}, first bidder=seat ${room.session.currentBidder}`);
 }
 
 function _handleBidIntent(room, ws, seat, move) {
