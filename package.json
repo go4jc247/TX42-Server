@@ -1,0 +1,17 @@
+{
+  "name": "tx42-server",
+  "version": "1.0.0",
+  "description": "Texas 42 Dominoes — Game-Aware Multiplayer Server",
+  "private": true,
+  "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.17.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/"
+  }
+}
